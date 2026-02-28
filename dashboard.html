@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>BelongNet</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0a0a0f;color:#fff;font-family:ui-monospace,monospace;padding:16px}
+.card{background:#111;border:1px solid #222;border-radius:12px;padding:14px;margin-bottom:12px}
+.ctitle{font-size:10px;font-weight:700;color:#555;text-transform:uppercase;letter-spacing:2px;margin-bottom:10px}
+input,select{width:100%;background:#1a1a1a;border:1px solid #333;border-radius:6px;padding:7px 10px;color:#fff;font-family:inherit;font-size:12px;margin-bottom:6px;outline:none}
+button{width:100%;padding:8px;border-radius:8px;border:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:6px;color:#fff}
+.bp{background:#7c3aed}.bb{background:#2563eb}.bg{background:#16a34a}.bgr{background:#333;color:#aaa}
+.row{display:flex;justify-content:space-between;align-items:center;background:#1a1a1a;border-radius:8px;padding:8px 10px;margin-bottom:4px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;color:#fff}
+.anchored{background:#166534}.pending{background:#854d0e}.anchoring{background:#1d4ed8}.failed{background:#7f1d1d}
+.mono{font-size:10px;color:#4ade80;word-break:break-all}
+.grid{display:grid;grid-template-columns:240px 1fr 1fr;gap:12px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat{background:#111;border:1px solid #222;border-radius:10px;padding:12px;text-align:center}
+</style>
+</head>
+<body>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+  <div><div style="font-size:20px;font-weight:900">BelongNet</div><div style="color:#555;font-size:11px">Private Enterprise Settlement Network</div></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <div id="status" style="padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #333;color:#555">Connecting...</div>
+    <button class="bgr" style="width:auto;padding:4px 12px;margin:0" onclick="refresh()">Refresh</button>
+    <button class="bp" style="width:auto;padding:4px 12px;margin:0" onclick="triggerBatch()">Force Batch</button>
+  </div>
+</div>
+<div class="stats">
+  <div class="stat"><div id="s1" style="font-size:26px;font-weight:900;color:#c084fc">0</div><div style="font-size:10px;color:#555;margin-top:4px">TENANTS</div></div>
+  <div class="stat"><div id="s2" style="font-size:26px;font-weight:900;color:#4ade80">0</div><div style="font-size:10px;color:#555;margin-top:4px">ANCHORED</div></div>
+  <div class="stat"><div id="s3" style="font-size:26px;font-weight:900;color:#60a5fa">0</div><div style="font-size:10px;color:#555;margin-top:4px">TXS ON-CHAIN</div></div>
+  <div class="stat"><div id="s4" style="font-size:26px;font-weight:900;color:#facc15">0</div><div style="font-size:10px;color:#555;margin-top:4px">PENDING</div></div>
+</div>
+<div class="grid">
+  <div>
+    <div class="card">
+      <div class="ctitle">New Tenant</div>
+      <input id="tname" placeholder="Enterprise name" value="AcmeCorp">
+      <select id="tchain"><option value="ETH">Ethereum</option><option value="SOL">Solana</option><option value="BOTH">Both</option></select>
+      <button class="bp" onclick="createTenant()">+ Create Tenant</button>
+    </div>
+    <div class="card">
+      <div class="ctitle">Tenants</div>
+      <div id="tlist" style="max-height:200px;overflow-y:auto"></div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="ctitle">Accounts <span id="selname" style="color:#7c3aed"></span></div>
+      <div id="alist" style="max-height:120px;overflow-y:auto;margin-bottom:8px"><div style="color:#555;font-size:11px;padding:8px">Select a tenant</div></div>
+      <input id="aref" placeholder="Account name (e.g. alice)">
+      <input id="abal" value="100000" placeholder="Initial balance">
+      <button class="bb" onclick="createAccount()">+ Add Account</button>
+    </div>
+    <div class="card">
+      <div class="ctitle">Send Transfer</div>
+      <select id="tfrom"><option value="">From (blank = mint)</option></select>
+      <select id="tto"><option value="">To (required)</option></select>
+      <input id="tamt" value="50000" placeholder="Amount">
+      <button class="bg" onclick="sendTx()">Send Private Transfer</button>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <div class="ctitle">Settlement Batches</div>
+      <div id="blist" style="max-height:500px;overflow-y:auto"><div style="color:#555;font-size:11px;text-align:center;padding:24px">No batches yet</div></div>
+    </div>
+  </div>
+</div>
+<script>
+const B = 'http://localhost:3000';
+let sel = null, accts = [];
+async function api(m,p,b){try{const r=await fetch(B+p,{method:m,headers:{'Content-Type':'application/json'},body:b?JSON.stringify(b):undefined});return r.json();}catch(e){return null;}}
+async function refresh(){
+  const h=await api('GET','/health');
+  const s=document.getElementById('status');
+  if(h){s.style.cssText='padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #166534;color:#4ade80;background:#052e16';s.textContent='Live ETH:'+(h.adapters&&h.adapters.ETH?'on':'off')+' SOL:'+(h.adapters&&h.adapters.SOL?'on':'off');}
+  else{s.style.cssText='padding:4px 12px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid #7f1d1d;color:#f87171;background:#2d0a0a';s.textContent='Offline';}
+  const tenants=await api('GET','/tenants')||[];
+  document.getElementById('s1').textContent=tenants.length;
+  document.getElementById('tlist').innerHTML=tenants.map(t=>'<div onclick="selectTenant(''+t.id+'',''+t.name+'',''+t.default_chain+'')" style="cursor:pointer;background:'+(sel&&sel.id===t.id?'#1e0a3c':'#1a1a1a')+';border:1px solid '+(sel&&sel.id===t.id?'#7c3aed':'#333')+';border-radius:8px;padding:8px 10px;margin-bottom:4px"><div style="font-weight:700">'+t.name+'</div><div style="font-size:10px;color:#555">'+t.default_chain+' '+t.id+'</div></div>').join('')||'<div style="color:#555;font-size:11px;text-align:center;padding:12px">No tenants</div>';
+  const batches=await api('GET','/batches')||[];
+  document.getElementById('s2').textContent=batches.filter(b=>b.status==='anchored').length;
+  document.getElementById('s3').textContent=batches.filter(b=>b.status==='anchored').reduce((s,b)=>s+(b.tx_count||0),0);
+  document.getElementById('s4').textContent=batches.filter(b=>b.status==='pending').length;
+  document.getElementById('blist').innerHTML=batches.map(b=>'<div style="background:#1a1a1a;border:1px solid #333;border-radius:10px;padding:10px;margin-bottom:8px"><div style="display:flex;justify-content:space-between;margin-bottom:6px"><div><div class=mono>'+b.id+'</div><div style="font-size:10px;color:#555">'+b.tx_count+' txs '+b.chain+'</div></div><span class="badge '+b.status+'">'+b.status+'</span></div><div style="font-size:10px;color:#555">Root: <span class=mono>'+b.commitment.slice(0,20)+'...</span></div>'+(b.anchors||[]).map(a=>'<div style="border-top:1px solid #2a2a2a;margin-top:8px;padding-top:8px"><div style="font-size:11px;font-weight:700">'+a.chain+' block '+a.block_or_slot+'</div><div class=mono style="color:#60a5fa">'+a.tx_hash_or_sig.slice(0,30)+'...</div>'+(a.chain==='ETH'&&!a.tx_hash_or_sig.startsWith('SIM')?'<a href="http://localhost:3000/verify/eth/'+b.id+'" target="_blank" style="font-size:10px;color:#60a5fa">Verify on-chain</a>':'')+' </div>').join('')+'</div>').join('')||'<div style="color:#555;font-size:11px;text-align:center;padding:24px">No batches yet</div>';
+  if(sel)loadTenant(sel.id);
+}
+function selectTenant(id,name,chain){sel={id,name,chain};document.getElementById('selname').textContent=name;loadTenant(id);refresh();}
+async function loadTenant(tid){
+  accts=await api('GET','/tenants/'+tid+'/accounts')||[];
+  document.getElementById('alist').innerHTML=accts.map(a=>'<div class=row><div><div style="font-weight:700">'+a.external_ref+'</div><div style="font-size:10px;color:#555">'+a.id+'</div></div><div style="color:#4ade80;font-weight:700">'+parseInt(a.balance).toLocaleString()+'</div></div>').join('')||'<div style="color:#555;font-size:11px;padding:8px">No accounts</div>';
+  const opts=accts.map(a=>'<option value="'+a.id+'">'+a.external_ref+' ('+parseInt(a.balance).toLocaleString()+')</option>').join('');
+  document.getElementById('tfrom').innerHTML='<option value="">From (blank=mint)</option>'+opts;
+  document.getElementById('tto').innerHTML='<option value="">To (required)</option>'+opts;
+}
+async function createTenant(){const name=document.getElementById('tname').value.trim();const chain=document.getElementById('tchain').value;if(!name)return;await api('POST','/tenants',{name,defaultChain:chain});refresh();}
+async function createAccount(){if(!sel){alert('Select a tenant');return;}const ref=document.getElementById('aref').value.trim();const bal=document.getElementById('abal').value;if(!ref)return;await api('POST','/tenants/'+sel.id+'/accounts',{externalRef:ref,initialBalance:bal});loadTenant(sel.id);}
+async function sendTx(){if(!sel){alert('Select a tenant');return;}const from=document.getElementById('tfrom').value;const to=document.getElementById('tto').value;const amt=document.getElementById('tamt').value;if(!to||!amt){alert('Fill To and Amount');return;}const body={toAccountId:to,amount:amt};if(from)body.fromAccountId=from;const r=await api('POST','/tenants/'+sel.id+'/transactions',body);if(r&&!r.error)loadTenant(sel.id);else alert('Error: '+JSON.stringify(r));}
+async function triggerBatch(){await api('POST','/admin/trigger-batch',{});setTimeout(refresh,3000);}
+refresh();setInterval(refresh,5000);
+</script>
+</body>
+</html>
